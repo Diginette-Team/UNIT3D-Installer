@@ -1,4 +1,4 @@
-//! Clone UNIT3D-Community-Edition, render the `.env`, set permissions,
+//! Clone UNIT3D, render the `.env`, set permissions,
 //! install dependencies (Composer + Bun), run migrations, set up cron +
 //! supervisor + Laravel Echo Server, and run post-install caching.
 //!
@@ -20,7 +20,7 @@ pub struct Unit3dSetupStep;
 
 impl Step for Unit3dSetupStep {
     fn name(&self) -> &'static str {
-        "UNIT3D-Community-Edition Settings and Configuration"
+        "UNIT3D Settings and Configuration"
     }
 
     fn handle(&self, ctx: &mut Context) -> Result<()> {

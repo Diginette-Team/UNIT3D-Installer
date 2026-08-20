@@ -47,7 +47,7 @@ fn default_min_php_version() -> String {
     "8.5".to_string()
 }
 fn default_repository() -> String {
-    "https://github.com/HDInnovations/UNIT3D-Community-Edition.git".to_string()
+    "https://github.com/HDInnovations/UNIT3D.git".to_string()
 }
 fn default_tag() -> String {
     "v9.2.0".to_string()
@@ -761,7 +761,7 @@ mod tests {
         let cfg = Config::default();
         assert_eq!(
             cfg.unit3d.repository,
-            "https://github.com/HDInnovations/UNIT3D-Community-Edition.git"
+            "https://github.com/HDInnovations/UNIT3D.git"
         );
         assert_eq!(cfg.unit3d.tag, "v9.2.0");
         assert_eq!(cfg.unit3d.min_php_version, "8.5");
@@ -1072,7 +1072,7 @@ web_user = "ubuntu"
     #[test]
     fn safe_repository_checks() {
         assert!(is_safe_repository(
-            "https://github.com/HDInnovations/UNIT3D-Community-Edition.git"
+            "https://github.com/HDInnovations/UNIT3D.git"
         ));
         assert!(is_safe_repository("git@github.com:user/repo.git"));
         assert!(!is_safe_repository(""));

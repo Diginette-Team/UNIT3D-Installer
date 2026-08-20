@@ -2,7 +2,7 @@
 
 # UNIT3D Community Edition Installer
 
-**A one-shot, unattended installer for [UNIT3D-Community-Edition](https://github.com/HDInnovations/UNIT3D-Community-Edition), rewritten from PHP to a single static Rust binary.**
+**A one-shot, unattended installer for [UNIT3D](https://github.com/HDInnovations/UNIT3D), rewritten from PHP to a single static Rust binary.**
 
 **⚠️Is currently in a working state if there are any issues let us know⚠️**
 
@@ -142,7 +142,7 @@ Options:
 
 [unit3d]
 min_php_version = "8.5"              # Minimum PHP required on the box
-repository      = "https://github.com/HDInnovations/UNIT3D-Community-Edition.git"
+repository      = "https://github.com/HDInnovations/UNIT3D.git"
 tag             = "v9.2.0"           # Tag/branch to checkout (pinned clone)
 
 [app]
@@ -284,7 +284,7 @@ Use the standard UNIT3D update procedure (`git pull` + `composer install` + migr
 
 ## License
 
-[MIT](LICENSE) — see the [LICENSE](LICENSE) file for details. A big thanks to the [UNIT3D-Community-Edition](https://github.com/HDInnovations/UNIT3D-Community-Edition) project and all its contributors.
+[MIT](LICENSE) — see the [LICENSE](LICENSE) file for details. A big thanks to the [UNIT3D](https://github.com/HDInnovations/UNIT3D) project and all its contributors.
 
 ---
 
