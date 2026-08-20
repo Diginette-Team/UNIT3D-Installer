@@ -69,56 +69,7 @@ fn clone(ctx: &mut Context) -> Result<()> {
     if !ctx.dry_run && !Path::new(&install_dir).exists() {
         anyhow::bail!("git clone failed for {url} @ {tag}");
     }
-    patch_owner_seeder(ctx, &install_dir)?;
     Ok(())
-}
-
-/// Upstream (pinned tag) `UserSeeder` hardcodes the owner account to
-/// `group_id => 10`, which lands in Trustee with the seeded group order —
-/// so every seed/reseed strips the owner of owner rights. Patch the cloned
-/// seeder to look up the Owner group by slug instead (`GroupSeeder` runs
-/// before `UserSeeder`, so the lookup is valid at seed time). Because the
-/// fix lives in the cloned source, manual `migrate:fresh --seed` runs are
-/// covered too, not just installer runs.
-///
-/// Pure string replacement on the exact pinned-tag literals — no shell, no
-/// sed escaping. If upstream drift changes the seeder (tag bump), warn and
-/// skip: the post-seed tinker fixup in `setup()` still covers install-time.
-fn patch_owner_seeder(ctx: &mut Context, install_dir: &Path) -> Result<()> {
-    let path = install_dir.join("database/seeders/UserSeeder.php");
-    let Ok(src) = std::fs::read_to_string(&path) else {
-        // Dry-run (clone never executed) or unusual checkout layout.
-        return Ok(());
-    };
-    match owner_seeder_patch(&src) {
-        Some(patched) => {
-            std::fs::write(&path, patched)?;
-            ctx.style
-                .info("patched UserSeeder: owner account will seed into the Owner group");
-        }
-        None => {
-            ctx.style.warning(
-                "UserSeeder does not match the pinned tag (upstream drift?) — \
-                 owner-group seeder patch skipped; the post-seed fixup still runs",
-            );
-        }
-    }
-    Ok(())
-}
-
-/// Given the upstream `UserSeeder.php` source, return the patched version
-/// with the owner's hardcoded `group_id => 10` replaced by an Owner-group
-/// slug lookup. Returns `None` when the expected literals are absent.
-fn owner_seeder_patch(src: &str) -> Option<String> {
-    // v9.2.0: the owner row (id 3) is the only `group_id => 10` (System and
-    // Bot use 9). Match includes the alignment whitespace of the pinned tag.
-    let needle = r#"'group_id'          => 10,"#;
-    let replacement =
-        r#"'group_id'          => \App\Models\Group::where('slug', 'owner')->value('id'),"#;
-    if !src.contains(needle) {
-        return None;
-    }
-    Some(src.replace(needle, replacement))
 }
 
 /// Refuse to `rm -rf` anything at or above the filesystem root, home dirs,
@@ -401,34 +352,5 @@ mod tests {
         // An empty install_dir resolves to "." relative — rejected.
         assert!(unsafe_to_delete(Path::new("")).is_some());
         assert!(unsafe_to_delete(Path::new(".")).is_some());
-    }
-
-    #[test]
-    fn owner_seeder_patch_hits_pinned_tag_shape() {
-        // Exact v9.2.0 owner row (System/Bot rows use group_id 9 and must
-        // stay untouched).
-        let src = r#"'group_id'          => 9,
-                'password'          => Hash::make(config('unit3d.default-owner-password')),
-            ],
-            [
-                'id'                => 3,
-                'username'          => config('unit3d.owner-username'),
-                'email'             => config('unit3d.default-owner-email'),
-                'email_verified_at' => now(),
-                'group_id'          => 10,
-                'password'          => Hash::make(config('unit3d.default-owner-password')),
-"#;
-        let patched = owner_seeder_patch(src).expect("pinned-tag shape must match");
-        assert!(patched.contains(r"\App\Models\Group::where('slug', 'owner')->value('id')"));
-        assert!(!patched.contains("=> 10,"));
-        // The group_id 9 rows (System/Bot) must be untouched.
-        assert!(patched.contains("'group_id'          => 9,"));
-    }
-
-    #[test]
-    fn owner_seeder_patch_skips_on_drift() {
-        // Upstream changed the seeder (tag bump) — no exact literal, no patch.
-        assert!(owner_seeder_patch("'group_id' => 10").is_none());
-        assert!(owner_seeder_patch("").is_none());
     }
 }
