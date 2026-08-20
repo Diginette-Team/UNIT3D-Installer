@@ -1,6 +1,6 @@
 <div align="center">
 
-# UNIT3D Community Edition Installer
+# UNIT3D Installer
 
 **A one-shot, unattended installer for [UNIT3D](https://github.com/HDInnovations/UNIT3D), rewritten from PHP to a single static Rust binary.**
 
