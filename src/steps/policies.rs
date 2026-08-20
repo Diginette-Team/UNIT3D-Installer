@@ -68,7 +68,7 @@ fn ensure_not_installed(install_dir: &std::path::Path) -> Result<()> {
     let already = install_dir.join("app");
     if already.exists() {
         bail!(
-            "UNIT3D-Community-Edition already installed at {} — refusing to overwrite. \
+            "UNIT3D already installed at {} — refusing to overwrite. \
              Remove the directory first if you intend to reinstall.",
             install_dir.display()
         );
