@@ -4,7 +4,7 @@
 
 **A one-shot, unattended installer for [UNIT3D-Community-Edition](https://github.com/HDInnovations/UNIT3D-Community-Edition), rewritten from PHP to a single static Rust binary.**
 
-**⚠️ Work in progress (barely works)⚠️**
+**⚠️Is currently in a working state if there are any issues let us know⚠️**
 
 [![CI](https://github.com/InfinityHD-Net/UNIT3D-Installer/actions/workflows/ci.yml/badge.svg)](https://github.com/InfinityHD-Net/UNIT3D-Installer/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/rust-1.85%2B-orange)
