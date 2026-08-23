@@ -51,9 +51,9 @@ The Rust rewrite compiles to a **single static binary** with zero runtime depend
 
 ## Features
 
-- **Ubuntu LTS only** (20.04, 22.04, 24.04, 26.04) with root privilege checks.
+- **Ubuntu LTS** (20.04, 22.04, 24.04, 26.04) and Debian 12 (Bookworm) with root privilege checks.
 - **Database choice**: MySQL, MariaDB, or PostgreSQL — auto-provisioned and secured with randomized credentials.
-- **PHP 8.5** via the Ondrej PPA with opcache/JIT tuning, plus Node.js 24 LTS, Bun, and `laravel-echo-server`.
+- **PHP 8.5** via the Sury repository (Ubuntu/Debian) with opcache/JIT tuning, plus Node.js 24 LTS, Bun, and `laravel-echo-server`.
 - **Redis over unix sockets** for sub-millisecond IPC, with RAM-bounded LRU eviction (`maxmemory`).
 - **Nginx** site configuration with security headers, gzip, static-asset caching, `.env`/`.git` protection, and a `/socket.io` proxy for the chat server on the configured echo port.
 - **Let's Encrypt SSL** via `certbot` (automatic when `ssl = true`).
@@ -71,7 +71,7 @@ The Rust rewrite compiles to a **single static binary** with zero runtime depend
 
 | Requirement | Value |
 | --- | --- |
-| OS | Ubuntu 20.04 / 22.04 / 24.04 / 26.04 LTS |
+| OS | Ubuntu 20.04 / 22.04 / 24.04 / 26.04 LTS, Debian 12 (Bookworm) |
 | Privileges | `root` (or `sudo`) |
 | Network | A valid domain with an `A` record (and `CNAME` for `www`) pointing at the server |
 | Memory | 4 GB+ recommended (Redis, PHP-FPM, and Meilisearch all run concurrently) |
@@ -189,6 +189,9 @@ nginx_sites_available_path = "/etc/nginx/sites-available"
 # [os.ubuntu.software]
 # packages = { "nginx" = "Web Server", ... }
 # php_extensions = ["php8.5-fpm", ...]
+
+# Note: The [os.ubuntu] section is used for both Ubuntu and Debian since
+# they share the same package manager (apt) and default paths.
 ```
 
 ## What It Installs
@@ -197,10 +200,10 @@ The pipeline mirrors the classic installer flow, in this order:
 
 | # | Step | What happens |
 | --- | --- | --- |
-| 1 | **Policies** | Verifies root, supported Ubuntu release, no existing install, PHP version |
+| 1 | **Policies** | Verifies root, supported Ubuntu LTS/Debian release, no existing install, PHP version |
 | 2 | **Server** | Hostname, locale, timezone, swap, security hardening, SSH port configuration with lockout prevention |
 | 3 | **Redis** | Unix socket + group permissions, `maxmemory` cap, LRU policy, restart |
-| 4 | **Prerequisites** | PPA, apt packages, Node 24 LTS, Bun, `laravel-echo-server`, UFW rules (SSH, Echo, Nginx) |
+| 4 | **Prerequisites** | Sury PHP repo (Ubuntu/Debian), apt packages, Node 24 LTS, Bun, `laravel-echo-server`, UFW rules (SSH, Echo, Nginx) |
 | 5 | **Database** | Installs & secures MySQL/MariaDB/PostgreSQL, creates DB + user |
 | 6 | **PHP** | PHP-FPM, opcache/JIT tuning, `php.ini` hardening |
 | 7 | **Nginx** | Site config, security headers, `/socket.io` proxy, certbot SSL, UFW enable |
