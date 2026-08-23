@@ -18,12 +18,13 @@ pub struct DistInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Distro {
     Ubuntu,
+    Debian,
     Unsupported,
 }
 
 impl Distro {
     pub fn is_supported(&self) -> bool {
-        matches!(self, Distro::Ubuntu)
+        matches!(self, Distro::Ubuntu | Distro::Debian)
     }
 }
 
@@ -63,10 +64,10 @@ fn from_os_release() -> Result<Option<DistInfo>, DetectError> {
     if id.is_empty() && version_id.is_empty() {
         return Ok(None);
     }
-    let distro = if id == "ubuntu" {
-        Distro::Ubuntu
-    } else {
-        Distro::Unsupported
+    let distro = match id.as_str() {
+        "ubuntu" => Distro::Ubuntu,
+        "debian" => Distro::Debian,
+        _ => Distro::Unsupported,
     };
     Ok(Some(DistInfo {
         distro,
@@ -91,6 +92,13 @@ fn parse_issue_line(first: &str) -> Option<DistInfo> {
         return Some(DistInfo {
             distro: Distro::Ubuntu,
             id: "ubuntu".to_string(),
+            version_id: version.to_string(),
+        });
+    }
+    if name.eq_ignore_ascii_case("debian") {
+        return Some(DistInfo {
+            distro: Distro::Debian,
+            id: "debian".to_string(),
             version_id: version.to_string(),
         });
     }
@@ -135,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_ubuntu() {
+    fn accepts_debian() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(
             tmp.path(),
@@ -143,7 +151,7 @@ mod tests {
         )
         .unwrap();
         let info = parse_for_test(std::fs::read_to_string(tmp.path()).unwrap());
-        assert_eq!(info.distro, Distro::Unsupported);
+        assert_eq!(info.distro, Distro::Debian);
     }
 
     #[test]
@@ -159,8 +167,9 @@ mod tests {
     }
 
     #[test]
-    fn is_supported_matches_ubuntu_only() {
+    fn is_supported_matches_ubuntu_and_debian() {
         assert!(Distro::Ubuntu.is_supported());
+        assert!(Distro::Debian.is_supported());
         assert!(!Distro::Unsupported.is_supported());
     }
 
@@ -195,9 +204,9 @@ mod tests {
     }
 
     #[test]
-    fn issue_line_non_ubuntu() {
+    fn issue_line_debian_is_supported() {
         let info = parse_issue_line("Debian GNU/Linux 12 \\n \\l").unwrap();
-        assert_eq!(info.distro, Distro::Unsupported);
+        assert_eq!(info.distro, Distro::Debian);
         assert_eq!(info.id, "debian");
     }
 
@@ -223,10 +232,10 @@ mod tests {
             }
         }
         DistInfo {
-            distro: if id == "ubuntu" {
-                Distro::Ubuntu
-            } else {
-                Distro::Unsupported
+            distro: match id.as_str() {
+                "ubuntu" => Distro::Ubuntu,
+                "debian" => Distro::Debian,
+                _ => Distro::Unsupported,
             },
             id,
             version_id,

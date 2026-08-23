@@ -9,7 +9,7 @@
 
 [unit3d]
 min_php_version = "8.5"
-repository      = "https://github.com/HDInnovations/UNIT3D-Community-Edition.git"
+repository      = "https://github.com/HDInnovations/UNIT3D.git"
 tag             = "v9.2.0"
 
 [app]
@@ -30,6 +30,7 @@ dbuser         = "unit3d"
 # dbrootpass     = ""            # required for MySQL/MariaDB (set non-interactively)
 
 echo_port      = 8443
+ssh_port       = 22                 # SSH port UFW will allow (must match sshd_config)
 
 mail_driver    = "smtp"
 mail_host      = ""

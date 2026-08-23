@@ -1,4 +1,4 @@
-//! Clone UNIT3D-Community-Edition, render the `.env`, set permissions,
+//! Clone UNIT3D, render the `.env`, set permissions,
 //! install dependencies (Composer + Bun), run migrations, set up cron +
 //! supervisor + Laravel Echo Server, and run post-install caching.
 //!
@@ -20,7 +20,7 @@ pub struct Unit3dSetupStep;
 
 impl Step for Unit3dSetupStep {
     fn name(&self) -> &'static str {
-        "UNIT3D-Community-Edition Settings and Configuration"
+        "UNIT3D Settings and Configuration"
     }
 
     fn handle(&self, ctx: &mut Context) -> Result<()> {
@@ -248,12 +248,20 @@ fn setup(ctx: &mut Context) -> Result<()> {
 
     // Composer install + Bun build + artisan bootstrapping.
     let www_cmds = [
-        "composer install -q --prefer-dist --no-dev",
-        "composer dump-autoload --optimize",
+        "php -d opcache.preload='' $(command -v composer) install -q --prefer-dist --no-dev # composer install -q --prefer-dist --no-dev",
+        "php -d opcache.preload='' $(command -v composer) dump-autoload --optimize # composer dump-autoload --optimize",
+        // livewire, joypixels, and lavarel-assets needed for login
+        "php artisan vendor:publish --force --tag=livewire:assets --ansi",
+        "php artisan vendor:publish --tag=public --provider=\"hdvinnie\\LaravelJoyPixels\\LaravelJoyPixelsServiceProvider\"",
+        "php artisan vendor:publish --tag=laravel-assets --ansi --force",
         "bun install",
         "bun run build",
         "php artisan key:generate --force",
         "php artisan migrate --seed --force",
+        // Upstream UserSeeder pins the owner to group_id 10 (Trustee in some
+        // group orders) — re-assign the seeded owner to the real Owner group.
+        // Inner quotes are backslash-escaped so they survive bash -lc "...".
+        "php artisan tinker --execute='if (App\\Models\\Group::where(\\\"slug\\\", \\\"owner\\\")->exists()) { App\\Models\\User::where(\\\"username\\\", env(\\\"DEFAULT_OWNER_NAME\\\"))->first()?->update([\\\"group_id\\\" => App\\Models\\Group::where(\\\"slug\\\", \\\"owner\\\")->value(\\\"id\\\")]); }'",
         "php artisan auto:email-blacklist-update",
         "php artisan storage:link", // G15
         "php artisan config:cache", // G17
@@ -262,19 +270,41 @@ fn setup(ctx: &mut Context) -> Result<()> {
     ];
 
     for cmd in www_cmds {
-        let s = format!("sudo -u {web_user} bash -c 'cd {install_dir_s} && {cmd}'");
+        let s = format!("sudo -u {web_user} bash -lc \"cd {install_dir_s} && {cmd}\"");
         // G24: if running as web-user fails (Bun modules often can't write
         // outside the checkout as www-data), fall back to running as root
         // and re-fix permissions.
-        if ctx.run(&s).is_err()
+        let res = ctx.run(&s);
+        if res.is_err()
             && (cmd.starts_with("bun") || cmd.starts_with("composer") || cmd.starts_with("npm"))
         {
             ctx.style
                 .warning(&format!("{cmd} as {web_user} failed — retrying as root"));
             ctx.run(&format!("bash -c 'cd {install_dir_s} && {cmd}'"))?;
             ctx.run(&format!("chown -R {web_user}:{web_user} {install_dir_s}"))?;
+        } else if let Err(e) = res {
+            // Non-retryable command (php artisan migrate, key:generate, …)
+            // failed and was NOT retried — the install is broken from here
+            // on (e.g. migrate failing leaves the DB with no tables and
+            // every page 500s). Abort loudly instead of printing success.
+            anyhow::bail!(
+                "command failed: {cmd}\n{e}\n\
+                 the site will not work in this state — fix the error above \
+                 and re-run the installer"
+            );
         }
     }
+    let preload_path = install_dir.join("preload.php");
+    let preload_path_s = preload_path.display().to_string();
+    let ensure_preload = format!(
+        "if [ ! -f {preload} ]; then echo '<?php // opcache preload placeholder' > {preload} && chown {web_user}:{web_user} {preload} && chmod 0644 {preload}; fi",
+        preload = preload_path_s,
+        web_user = web_user
+    );
+    // run as root
+    ctx.run(&format!("bash -lc \"{ensure}\"", ensure = ensure_preload))?;
+    // if it fails, dont stop installer
+    ctx.run("systemctl restart php8.5-fpm || true")?;
 
     ctx.style.info("UNIT3D installed successfully");
     Ok(())

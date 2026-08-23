@@ -77,7 +77,8 @@ fn prerequisites_installs_packages_and_extensions() {
     assert!(exec.any("deb.nodesource.com/setup_24.x"));
     assert!(exec.any("bun.sh/install"));
     assert!(exec.any("npm install -g laravel-echo-server"));
-    // UFW
+    // UFW (SSH port allowed before the firewall is enabled later).
+    assert!(exec.any("ufw allow 22"));
     assert!(exec.any("ufw allow 8443"));
     assert!(exec.any("ufw allow 'Nginx Full'"));
 }
@@ -138,7 +139,7 @@ fn prerequisites_runs_pecl_and_moves_bun() {
     assert!(exec.any("pecl install redis"));
     assert!(exec.any("mv /root/.bun/bin/bun /usr/local/bin/"));
     assert!(exec.any("chmod a+x /usr/local/bin/bun"));
-    assert!(exec.any("add-apt-repository -y ppa:ondrej/php"));
+    assert!(exec.any("packages.sury.org/debsuryorg-archive-keyring.deb"));
 }
 
 #[test]

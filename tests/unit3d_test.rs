@@ -42,6 +42,10 @@ fn unit3d_installs_dependencies_and_bootstraps() {
     // Composer + Bun.
     assert!(exec.any("composer install -q --prefer-dist --no-dev"));
     assert!(exec.any("composer dump-autoload --optimize"));
+    //  Fortify, Livewire, JoyPixels, Laravel assets all required for login routes
+    assert!(exec.any("php artisan vendor:publish --force --tag=livewire:assets --ansi"));
+    assert!(exec.any("php artisan vendor:publish --tag=public --provider=\"hdvinnie\\LaravelJoyPixels\\LaravelJoyPixelsServiceProvider\""));
+    assert!(exec.any("php artisan vendor:publish --tag=laravel-assets --ansi --force"));
     assert!(exec.any("bun install"));
     assert!(exec.any("bun run build"));
     // Artisan bootstrapping (G15/G17).
@@ -274,6 +278,42 @@ fn unit3d_cron_is_idempotent() {
         .expect("cron command emitted");
     assert!(cron.contains("grep -v 'artisan schedule:run'"));
     assert!(cron.contains("* * * * * php /var/www/html/artisan schedule:run"));
+}
+
+#[test]
+fn unit3d_step_fixes_owner_group_after_seed() {
+    let (mut ctx, exec) = unit3d_context();
+    Unit3dSetupStep.handle(&mut ctx).unwrap();
+
+    let cmds = exec.ran();
+    let migrate_idx = cmds
+        .iter()
+        .position(|c| c.contains("php artisan migrate --seed --force"))
+        .expect("migrate not run");
+    let fix_idx = cmds
+        .iter()
+        .position(|c| c.contains("tinker --execute"))
+        .expect("owner group fixup not run");
+    assert!(
+        fix_idx > migrate_idx,
+        "fixup must run after migrate --seed, got: {fix_idx} vs {migrate_idx}"
+    );
+
+    let fix = &cmds[fix_idx];
+    // The command is wrapped in `bash -lc "..."`, so inner quotes appear
+    // backslash-escaped in the recorded string.
+    assert!(
+        fix.contains("Group::where(\\\"slug\\\", \\\"owner\\\")"),
+        "fixup must look up the Owner group by slug, got: {fix}"
+    );
+    assert!(
+        fix.contains("DEFAULT_OWNER_NAME"),
+        "fixup must target the seeded owner via env, got: {fix}"
+    );
+    assert!(
+        fix.contains("group_id"),
+        "fixup must reassign group_id, got: {fix}"
+    );
 }
 
 #[test]

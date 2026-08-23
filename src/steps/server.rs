@@ -23,6 +23,7 @@ impl Step for ServerSetupStep {
 
     fn handle(&self, ctx: &mut Context) -> Result<()> {
         server(ctx)?;
+        firewall(ctx)?;
         user(ctx)?;
         database(ctx)?;
         mail(ctx)?;
@@ -256,6 +257,106 @@ fn mail(ctx: &mut Context) -> Result<()> {
     Ok(())
 }
 
+fn firewall(ctx: &mut Context) -> Result<()> {
+    use owo_colors::OwoColorize;
+
+    ctx.style.section("Firewall Settings");
+    loop {
+        let default = if ctx.config.app.ssh_port == 0 {
+            "22".to_string()
+        } else {
+            ctx.config.app.ssh_port.to_string()
+        };
+        let port = ctx.prompter.text(
+            "SSH Port to allow through UFW (press Enter for 22)",
+            &default,
+        )?;
+        if let Ok(p) = port.parse::<u16>() {
+            ctx.config.app.ssh_port = p;
+        } else if ctx.config.app.ssh_port == 0 {
+            ctx.config.app.ssh_port = 22;
+        }
+
+        // Big un-missable warning: the installer enables UFW with a
+        // default-deny policy later in the pipeline. A wrong SSH port
+        // here means instant lockout the moment `ufw --force enable`
+        // runs in the nginx step.
+        ctx.style.sep();
+        println!(
+            "{}",
+            "                    ⚠  FIREWALL / SSH LOCKOUT WARNING  ⚠"
+                .red()
+                .bold()
+        );
+        ctx.style.sep();
+        println!(
+            "{}",
+            "  UFW will be ENABLED and will DENY all incoming traffic by default."
+                .red()
+                .bold()
+        );
+        println!();
+        println!(
+            "  SSH port that will be allowed : {}",
+            ctx.config.app.ssh_port.to_string().yellow().bold()
+        );
+        println!();
+        println!(
+            "{}",
+            "  If this does NOT match the port your sshd is actually listening"
+                .red()
+                .bold()
+        );
+        println!(
+            "{}",
+            "  on (check `Port` in /etc/ssh/sshd_config), you WILL BE LOCKED OUT"
+                .red()
+                .bold()
+        );
+        println!(
+            "{}",
+            "  of this server the moment the firewall is enabled."
+                .red()
+                .bold()
+        );
+        println!();
+        ctx.style.warning(
+            "UFW denies all incoming traffic by default. If you run other \
+             services that need inbound ports (e.g. IRC, game servers, \
+             monitoring), you must `ufw allow` them yourself after install \
+             or they will be unreachable.",
+        );
+        ctx.style.sep();
+
+        // Non-interactive runs (CI, --dry-run, config-file driven) cannot
+        // answer a confirm prompt — skip the gate there.
+        if ctx.non_interactive {
+            return Ok(());
+        }
+
+        // Cool-down: the confirmation is only offered after a 5-second
+        // countdown so the warning above cannot be spam-entered past.
+        for remaining in (1..=5).rev() {
+            println!("  Reading the warning above is required — you may confirm in {remaining}...");
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+
+        // Default is `false`: hammering Enter declines instead of confirming.
+        let confirmed = ctx.prompter.confirm(
+            &format!(
+                "Is {} definitely the port your sshd listens on?",
+                ctx.config.app.ssh_port
+            ),
+            false,
+        )?;
+        if confirmed {
+            return Ok(());
+        }
+        ctx.style
+            .warning("Not confirmed — enter the correct SSH port this time.");
+    }
+}
+
 fn chat(ctx: &mut Context) -> Result<()> {
     ctx.style.section("Chat Settings");
     let default = if ctx.config.app.echo_port == 0 {
@@ -414,6 +515,36 @@ mod tests {
             ctx.config.app.hostname,
             "tracker.example.com;touch /tmp/pwn"
         );
+    }
+
+    #[test]
+    fn firewall_prompt_defaults_to_22_when_blank() {
+        let args = Args::parse_from(["unit3d-installer", "--non-interactive"]);
+        let mut ctx = Context::build(&args).unwrap();
+        ctx.config.app.ssh_port = 0;
+        firewall(&mut ctx).unwrap();
+        // Non-interactive returns default "22", parsed to u16.
+        assert_eq!(ctx.config.app.ssh_port, 22);
+    }
+
+    #[test]
+    fn firewall_prompt_keeps_custom_port() {
+        let args = Args::parse_from(["unit3d-installer", "--non-interactive"]);
+        let mut ctx = Context::build(&args).unwrap();
+        ctx.config.app.ssh_port = 2222;
+        firewall(&mut ctx).unwrap();
+        assert_eq!(ctx.config.app.ssh_port, 2222);
+    }
+
+    #[test]
+    fn firewall_prompt_falls_back_to_22_on_invalid_input_when_unset() {
+        // A non-numeric answer leaves the previous value intact; when the
+        // previous value is 0 (unset), fall back to the safe default 22.
+        let args = Args::parse_from(["unit3d-installer", "--non-interactive"]);
+        let mut ctx = Context::build(&args).unwrap();
+        ctx.config.app.ssh_port = 0;
+        firewall(&mut ctx).unwrap();
+        assert_eq!(ctx.config.app.ssh_port, 22);
     }
 
     #[test]

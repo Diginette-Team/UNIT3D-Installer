@@ -29,7 +29,7 @@ impl Step for PoliciesStep {
                 Ok(info) => {
                     if !info.distro.is_supported() {
                         bail!(
-                            "Unsupported OS: {} {}. This installer only supports Ubuntu LTS.",
+                            "Unsupported OS: {} {}. This installer supports Ubuntu LTS and Debian.",
                             info.id,
                             info.version_id
                         );
@@ -68,12 +68,39 @@ fn ensure_not_installed(install_dir: &std::path::Path) -> Result<()> {
     let already = install_dir.join("app");
     if already.exists() {
         bail!(
-            "UNIT3D-Community-Edition already installed at {} — refusing to overwrite. \
+            "UNIT3D already installed at {} — refusing to overwrite. \
              Remove the directory first if you intend to reinstall.",
             install_dir.display()
         );
     }
     Ok(())
+}
+
+/// Compare PHP versions numerically rather than via string prefix matching.
+/// Accepts values such as `8.5`, `8.5.1`, and `8.5.0RC1`.
+fn php_version_at_least(version: &str, required: &str) -> bool {
+    let parse = |text: &str| {
+        let mut nums = Vec::new();
+        for part in text.split(|c: char| !c.is_ascii_digit()) {
+            if part.is_empty() {
+                continue;
+            }
+            if let Ok(num) = part.parse::<u32>() {
+                nums.push(num);
+            }
+            if nums.len() == 3 {
+                break;
+            }
+        }
+        while nums.len() < 3 {
+            nums.push(0);
+        }
+        (nums[0], nums[1], nums[2])
+    };
+
+    let current = parse(version);
+    let minimum = parse(required);
+    current >= minimum
 }
 
 /// Verify the on-box PHP version is at least the required one. Reads
@@ -94,7 +121,7 @@ fn check_php_compat(required: &str) -> Result<()> {
     };
     // Format: "PHP 8.5.0 (cli) ( ... )"
     let version = first.split_whitespace().nth(1).unwrap_or_default();
-    if !version.starts_with(required) {
+    if !php_version_at_least(version, required) {
         bail!("PHP version {version} on this box is below required {required}");
     }
     Ok(())
@@ -133,6 +160,13 @@ mod tests {
         let version = first.split_whitespace().nth(1).unwrap_or_default();
         assert_eq!(version, "8.2.0");
         assert!(!version.starts_with("8.5"));
+    }
+
+    #[test]
+    fn php_version_at_least_accepts_newer_major_versions() {
+        assert!(php_version_at_least("8.6.0", "8.5"));
+        assert!(php_version_at_least("8.5.1", "8.5"));
+        assert!(!php_version_at_least("8.4.24", "8.5"));
     }
 
     #[test]

@@ -116,6 +116,7 @@ pub fn print_summary(cfg: &Config) {
     );
     println!("  PHP Version  : {}", cfg.unit3d.min_php_version);
     println!("  Echo Port    : {}", cfg.app.echo_port);
+    println!("  SSH Port     : {}", cfg.app.ssh_port);
     println!();
 }
 

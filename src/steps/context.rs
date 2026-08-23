@@ -159,9 +159,9 @@ pub struct Steps;
 impl Steps {
     pub fn ordered() -> Vec<Box<dyn Step>> {
         vec![
-            Box::new(super::policies::PoliciesStep),
             Box::new(super::server::ServerSetupStep),
             Box::new(super::prerequisites::PrerequisitesStep),
+            Box::new(super::policies::PoliciesStep),
             Box::new(super::redis::RedisSetupStep),
             Box::new(super::database::DatabaseStep),
             Box::new(super::php::PhpSetupStep),

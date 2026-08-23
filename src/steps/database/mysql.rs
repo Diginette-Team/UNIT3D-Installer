@@ -84,9 +84,28 @@ pub fn configure(ctx: &mut Context) -> Result<()> {
     // On a fresh Ubuntu data dir is empty — initialize it.
     if ctx.dry_run || !Path::new("/var/lib/mysql").exists() || is_dir_empty("/var/lib/mysql")? {
         ctx.run_all([
+            // stop any running service instances before initialization
+            "systemctl stop mariadb || true".to_string(),
+            "systemctl stop mysql || true".to_string(),
+            // ensure directory exists and is owned by mysql
             "mkdir -p /var/lib/mysql".to_string(),
-            "chown mysql:mysql /var/lib/mysql".to_string(),
-            format!("{} --initialize-insecure", flavor.init_bin()),
+            // make sure `mysql` user exists; if not, try to create it
+            "id -u mysql >/dev/null 2>&1 || (groupadd -r mysql >/dev/null 2>&1 || true) && (useradd -r -g mysql -s /usr/sbin/nologin mysql >/dev/null 2>&1 || true)".to_string(),
+            // recursively set ownership and backup stale lock files that can
+            // block init if leftover by previous runs
+            "chown -R mysql:mysql /var/lib/mysql".to_string(),
+            "[ -e /var/lib/mysql/aria_log_control ] && mv /var/lib/mysql/aria_log_control /var/lib/mysql/aria_log_control.bak || true".to_string(),
+            "[ -e /var/lib/mysql/ibdata1 ] && mv /var/lib/mysql/ibdata1 /var/lib/mysql/ibdata1.bak || true".to_string(),
+            match flavor {
+                    Flavor::MariaDb => format!(
+                        "( {bin} --initialize-insecure --user=mysql ) || ( mariadb-install-db --user=mysql --datadir=/var/lib/mysql ) || runuser -u mysql -- mariadb-install-db --user=mysql --datadir=/var/lib/mysql || runuser -u mysql -- mysql_install_db --user=mysql --datadir=/var/lib/mysql",
+                        bin = flavor.init_bin()
+                    ),
+                    Flavor::Mysql => format!(
+                        "( {bin} --initialize-insecure --user=mysql ) || runuser -u mysql -- {bin} --initialize-insecure",
+                        bin = flavor.init_bin()
+                    ),
+                },
         ])?;
     }
 
@@ -105,7 +124,11 @@ pub fn configure(ctx: &mut Context) -> Result<()> {
     ctx.run_all([
         "mkdir -p /var/run/mysqld".to_string(),
         "chown mysql:mysql /var/run/mysqld".to_string(),
-        "chmod -R 755 /var/run/mysqld".to_string(),
+        // NOTE: never `chmod -R` here. Recursing would also hit the live
+        // `mysqld.sock` (present on re-installs) — a unix socket needs write
+        // permission to connect(), so a 755 socket locks out every non-root
+        // client (www-data/PHP-FPM) with SQLSTATE[HY000] [2002] Permission
+        // denied. The directory itself is already 755 from mkdir.
         format!("update-rc.d {} defaults", flavor.service_name()),
         format!("service {} start", flavor.service_name()),
         format!(
@@ -124,21 +147,30 @@ pub fn configure(ctx: &mut Context) -> Result<()> {
     let root_pass = shell_quote(&ctx.config.app.dbrootpass);
     let bin = flavor.binary();
 
-    let critical: [String; 9] = [
+    let mut critical: Vec<String> = vec![
         format!("{bin} -e \"DROP USER IF EXISTS '{dbuser}'@'localhost'\""),
         format!("{bin} -e \"DROP DATABASE IF EXISTS {db}\""),
         format!("{bin} -e \"CREATE DATABASE {db}\""),
         format!("{bin} -e \"CREATE USER '{dbuser}'@'localhost' IDENTIFIED BY '{dbpass}'\""),
         format!("{bin} -e \"GRANT ALL PRIVILEGES ON {db} . * TO '{dbuser}'@'localhost'\""),
-        format!(
-            "{bin} -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{root_pass}'\""
-        ),
+    ];
+
+    if matches!(flavor, Flavor::Mysql) {
+        critical.push(format!(
+            "{bin} -e \"ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '{root_pass}'\"",
+            bin = bin,
+            root_pass = root_pass
+        ));
+    }
+
+    critical.extend_from_slice(&[
         format!("{bin} -e \"DELETE FROM mysql.user WHERE User=''\""),
         format!(
             "{bin} -e \"DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')\""
         ),
         format!("{bin} -e \"FLUSH PRIVILEGES\""),
-    ];
+    ]);
+
     ctx.run_all(critical)?;
 
     // Non-critical: drop the test database.

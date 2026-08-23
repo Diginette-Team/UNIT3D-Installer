@@ -57,14 +57,14 @@ mod tests {
         assert_eq!(
             names,
             [
-                "Validating Installer Policies",
                 "Server Setup",
                 "Prerequisites",
+                "Validating Installer Policies",
                 "Redis Setup & Configurations",
                 "Configuring & Securing Database",
                 "PHP & PHP-FPM Configuration",
                 "Nginx Setup & Configurations",
-                "UNIT3D-Community-Edition Settings and Configuration",
+                "UNIT3D Settings and Configuration",
                 "Meilisearch Setup & Configuration",
                 "Finalizing Install (credentials file)",
             ]

@@ -133,6 +133,7 @@ fn yes_to_all_alias_works_in_dry_run() {
 fn dry_run_uses_node_24_and_echo_port() {
     let stdout = dry_run_stdout();
     assert!(stdout.contains("setup_24.x"));
+    assert!(stdout.contains("ufw allow 22"));
     assert!(stdout.contains("ufw allow 8443"));
     assert!(stdout.contains("php artisan scout:sync-index-settings"));
     assert!(stdout.contains("sudo -u www-data bash"));

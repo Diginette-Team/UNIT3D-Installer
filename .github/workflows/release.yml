@@ -23,25 +23,41 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             arch: x86_64
+            runner: ubuntu-latest
+
           - target: aarch64-unknown-linux-gnu
             arch: aarch64
-    runs-on: ubuntu-latest
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Verify architecture
+        run: |
+          echo "Runner: $RUNNER_ARCH"
+          echo "Machine: $(uname -m)"
+          echo "Target: ${{ matrix.target }}"
+
       - name: Install cross-linker
         if: matrix.arch == 'aarch64'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
+
       - name: Build release
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --target ${{ matrix.target }}
+
       - name: Package tarball
         run: |
           mkdir -p dist
@@ -49,12 +65,14 @@ jobs:
           tar -czf "dist/unit3d-installer-${{ matrix.arch }}.tar.gz" -C dist unit3d-installer
           sha256sum "dist/unit3d-installer-${{ matrix.arch }}.tar.gz" \
             > "dist/unit3d-installer-${{ matrix.arch }}.tar.gz.sha256"
+
       - name: Smoke-test dry run (host arch only)
         if: matrix.arch == 'x86_64'
         run: |
           ./target/${{ matrix.target }}/release/unit3d-installer \
             --non-interactive --dry-run --config unit3d-installer.example.toml </dev/null >/tmp/dryrun.log
           grep -q "UNIT3D Installation Complete!" /tmp/dryrun.log
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -65,25 +83,23 @@ jobs:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+
       - name: Derive release tag
         id: tag
         run: |
-          # On a `v*` tag push the tag already exists — reuse it. On any
-          # other push to master we mint a unique per-commit tag so every
-          # commit produces a downloadable release (`install.sh` fetches
-          # `releases/download/latest/...` which resolves to the newest
-          # non-prerelease release — hence these are NOT marked prerelease).
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=ci-${GITHUB_SHA::10}" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Create release
         uses: softprops/action-gh-release@v3
         with:

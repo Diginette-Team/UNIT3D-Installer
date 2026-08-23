@@ -47,7 +47,7 @@ fn default_min_php_version() -> String {
     "8.5".to_string()
 }
 fn default_repository() -> String {
-    "https://github.com/HDInnovations/UNIT3D-Community-Edition.git".to_string()
+    "https://github.com/HDInnovations/UNIT3D.git".to_string()
 }
 fn default_tag() -> String {
     "v9.2.0".to_string()
@@ -99,6 +99,8 @@ pub struct AppSection {
 
     #[serde(default = "default_echo_port")]
     pub echo_port: u16,
+    #[serde(default = "default_ssh_port")]
+    pub ssh_port: u16,
     #[serde(default)]
     pub tmdb_key: String,
     #[serde(default)]
@@ -128,6 +130,7 @@ impl Default for AppSection {
             mail_password: String::new(),
             mail_from_name: String::new(),
             echo_port: default_echo_port(),
+            ssh_port: default_ssh_port(),
             tmdb_key: String::new(),
             meilisearch_key: String::new(),
         }
@@ -157,6 +160,9 @@ fn default_mail_port() -> String {
 }
 fn default_echo_port() -> u16 {
     8443
+}
+fn default_ssh_port() -> u16 {
+    22
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -261,13 +267,23 @@ impl Default for SoftwareSection {
 }
 
 fn default_software() -> BTreeMap<String, String> {
+    default_software_for_db_driver(default_db_driver())
+}
+
+fn default_software_for_db_driver(db_driver: DbDriver) -> BTreeMap<String, String> {
     let mut m = BTreeMap::new();
+    let db_pkg = db_driver.package();
     let items = [
         ("build-essential", "Basic C/C++ Development Environment"),
         ("nginx", "Web Server"),
-        ("mariadb-server", "Database Server (MariaDB)"),
-        ("mysql-server", "Database Server (MySQL)"),
-        ("postgresql", "Database Server (PostgreSQL)"),
+        (
+            db_pkg,
+            match db_driver {
+                DbDriver::Mysql => "Database Server (MySQL)",
+                DbDriver::MariaDb => "Database Server (MariaDB)",
+                DbDriver::Postgres => "Database Server (PostgreSQL)",
+            },
+        ),
         ("supervisor", "A Process Control System"),
         ("nodejs", "JavaScript Run-time Environment (Includes npm)"),
         ("git", "Version Control"),
@@ -295,6 +311,27 @@ fn default_software() -> BTreeMap<String, String> {
     m
 }
 
+fn software_packages_for_driver(
+    packages: &BTreeMap<String, String>,
+    db_driver: DbDriver,
+) -> BTreeMap<String, String> {
+    let db_pkg = db_driver.package();
+    let mut filtered = BTreeMap::new();
+    for (pkg, desc) in packages {
+        if matches!(
+            pkg.as_str(),
+            "mysql-server" | "mariadb-server" | "postgresql"
+        ) {
+            if pkg == db_pkg {
+                filtered.insert(pkg.clone(), desc.clone());
+            }
+        } else {
+            filtered.insert(pkg.clone(), desc.clone());
+        }
+    }
+    filtered
+}
+
 fn default_php_extensions() -> Vec<String> {
     [
         "php8.5-fpm",
@@ -313,7 +350,7 @@ fn default_php_extensions() -> Vec<String> {
         "php8.5-bcmath",
         "php8.5-intl",
         "php8.5-soap",
-        "php8.5-opcache",
+        // `php8.5-opcache` package that may not exist in all repos.
         "php8.5-readline",
         "php8.5-common",
         "php8.5-igbinary",
@@ -351,7 +388,17 @@ impl Config {
             if is_effectively_empty(&text) {
                 return Err(ConfigError::Empty(path.to_path_buf()));
             }
-            let cfg: Config = toml::from_str(&text)?;
+            let mut cfg: Config = toml::from_str(&text)?;
+            if !text.contains("[os.ubuntu.software]") {
+                let filtered = software_packages_for_driver(
+                    &cfg.os.ubuntu.software.packages,
+                    cfg.app.db_driver,
+                );
+                cfg.os.ubuntu.software = SoftwareSection {
+                    packages: filtered,
+                    php_extensions: cfg.os.ubuntu.software.php_extensions,
+                };
+            }
             cfg.validate()?;
             return Ok(cfg);
         }
@@ -377,6 +424,11 @@ impl Config {
         if self.app.echo_port == 0 {
             return Err(ConfigError::Invalid(
                 "app.echo_port must be a non-zero TCP port (1-65535)".to_string(),
+            ));
+        }
+        if self.app.ssh_port == 0 {
+            return Err(ConfigError::Invalid(
+                "app.ssh_port must be a non-zero TCP port (1-65535)".to_string(),
             ));
         }
         // Database name / user flow into `mysql -e` and `psql` strings.
@@ -677,6 +729,8 @@ mod tests {
         ] {
             assert!(sw.packages.contains_key(key), "missing package {key}");
         }
+        assert!(!sw.packages.contains_key("mysql-server"));
+        assert!(!sw.packages.contains_key("postgresql"));
         // Every package has a non-empty description.
         for (pkg, desc) in &sw.packages {
             assert!(!desc.is_empty(), "package {pkg} has empty description");
@@ -689,7 +743,12 @@ mod tests {
         assert!(exts.contains(&"php8.5-fpm".to_string()));
         assert!(exts.contains(&"php8.5-mysql".to_string()));
         assert!(exts.contains(&"php8.5-pgsql".to_string()));
-        assert!(exts.contains(&"php8.5-opcache".to_string()));
+        // Some repositories provide opcache as a separate package, others
+        // bundle it in `php8.5-common`. Accept either signal as valid.
+        assert!(
+            exts.contains(&"php8.5-common".to_string())
+                || exts.iter().any(|e| e.contains("opcache"))
+        );
         // No duplicates.
         let mut sorted = exts.clone();
         sorted.sort();
@@ -702,11 +761,12 @@ mod tests {
         let cfg = Config::default();
         assert_eq!(
             cfg.unit3d.repository,
-            "https://github.com/HDInnovations/UNIT3D-Community-Edition.git"
+            "https://github.com/HDInnovations/UNIT3D.git"
         );
         assert_eq!(cfg.unit3d.tag, "v9.2.0");
         assert_eq!(cfg.unit3d.min_php_version, "8.5");
         assert_eq!(cfg.app.echo_port, 8443);
+        assert_eq!(cfg.app.ssh_port, 22);
         assert!(cfg.app.ssl);
         assert_eq!(cfg.os.ubuntu.web_user, "www-data");
         assert_eq!(cfg.os.ubuntu.install_dir, PathBuf::from("/var/www/html"));
@@ -821,11 +881,21 @@ web_user = "ubuntu"
     }
 
     #[test]
-    fn software_packages_include_all_db_servers() {
+    fn software_packages_match_selected_db_driver() {
         let sw = SoftwareSection::default();
-        for key in ["mysql-server", "mariadb-server", "postgresql"] {
-            assert!(sw.packages.contains_key(key), "missing {key}");
-        }
+        assert!(sw.packages.contains_key("mariadb-server"));
+        assert!(!sw.packages.contains_key("mysql-server"));
+        assert!(!sw.packages.contains_key("postgresql"));
+
+        let mysql_sw = default_software_for_db_driver(DbDriver::Mysql);
+        assert!(mysql_sw.contains_key("mysql-server"));
+        assert!(!mysql_sw.contains_key("mariadb-server"));
+        assert!(!mysql_sw.contains_key("postgresql"));
+
+        let postgres_sw = default_software_for_db_driver(DbDriver::Postgres);
+        assert!(postgres_sw.contains_key("postgresql"));
+        assert!(!postgres_sw.contains_key("mariadb-server"));
+        assert!(!postgres_sw.contains_key("mysql-server"));
     }
 
     #[test]
@@ -864,6 +934,24 @@ web_user = "ubuntu"
         cfg.app.echo_port = 0;
         let err = cfg.validate().unwrap_err();
         assert!(err.to_string().contains("echo_port"));
+    }
+
+    #[test]
+    fn toml_roundtrip_sets_ssh_port() {
+        let cfg: Config = toml::from_str("[app]\nssh_port = 2222\n").unwrap();
+        assert_eq!(cfg.app.ssh_port, 2222);
+        // Default is 22 when unset.
+        let cfg: Config = toml::from_str("[app]\nhostname = \"tracker.example.com\"\n").unwrap();
+        assert_eq!(cfg.app.ssh_port, 22);
+    }
+
+    #[test]
+    fn validate_rejects_zero_ssh_port() {
+        let mut cfg = Config::default();
+        cfg.app.hostname = "tracker.example.com".to_string();
+        cfg.app.ssh_port = 0;
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("ssh_port"));
     }
 
     #[test]
@@ -984,7 +1072,7 @@ web_user = "ubuntu"
     #[test]
     fn safe_repository_checks() {
         assert!(is_safe_repository(
-            "https://github.com/HDInnovations/UNIT3D-Community-Edition.git"
+            "https://github.com/HDInnovations/UNIT3D.git"
         ));
         assert!(is_safe_repository("git@github.com:user/repo.git"));
         assert!(!is_safe_repository(""));

@@ -23,11 +23,25 @@ use clap::Parser;
 /// Entrypoint shared by the `main` binary.
 pub fn run() -> Result<()> {
     let args = cli::Args::parse();
+    // If running the binary in non-interactive mode with no explicit
+    // `--config`, prefer a local example TOML when present so `--non-interactive`
+    // can be exercised by operators. Do NOT do this inside tests (they call
+    // `Context::build` directly) — keep test behavior deterministic.
+    let mut args_for_ctx = args.clone();
+    if args_for_ctx.non_interactive && args_for_ctx.config.is_none() {
+        if let Ok(cwd) = std::env::current_dir() {
+            let example = cwd.join("unit3d-installer.example.toml");
+            if example.exists() {
+                args_for_ctx.config = Some(example);
+            }
+        }
+    }
+
     init_tracing(args.verbosity);
 
     print_intro();
 
-    let mut ctx = steps::Context::build(&args)?;
+    let mut ctx = steps::Context::build(&args_for_ctx)?;
     let runner = steps::StepRunner;
     runner.run(&mut ctx)?;
 
