@@ -4,11 +4,10 @@
 
 **A one-shot, unattended installer for [UNIT3D](https://github.com/HDInnovations/UNIT3D), rewritten from PHP to a single static Rust binary.**
 
-**⚠️Is currently in a working state if there are any issues let us know⚠️**
-
 [![CI](https://github.com/InfinityHD-Net/UNIT3D-Installer/actions/workflows/ci.yml/badge.svg)](https://github.com/InfinityHD-Net/UNIT3D-Installer/actions/workflows/ci.yml)
 ![Rust](https://img.shields.io/badge/rust-1.85%2B-orange)
 ![License](https://img.shields.io/github/license/InfinityHD-Net/UNIT3D-Installer)
+![Version](https://img.shields.io/github/v/release/InfinityHD-Net/UNIT3D-Installer)
 
 </div>
 
@@ -63,6 +62,10 @@ The Rust rewrite compiles to a **single static binary** with zero runtime depend
 - **Idempotent `crontab` merge** for `artisan schedule:run`.
 - **Laravel post-install caching** (`config:cache`, `route:cache`, `view:cache`, `storage:link`).
 - **Dry-run mode** that prints the entire plan without touching the system.
+- **SSH port configuration** for UFW firewall — prevents accidental lockout with a mandatory 5-second confirmation countdown.
+- **Non-interactive mode** for CI/CD pipelines with full config file support.
+- **Security hardening**: UFW default-deny policy, SSH port validation, `.env`/`.git` protection in Nginx.
+- **Automatic credential generation** for database passwords, admin password, and Meilisearch master key.
 
 ## Requirements
 
@@ -163,6 +166,7 @@ dbpass         = ""                  # Auto-generated if blank
 dbrootpass     = ""                  # DB root password (required non-interactively)
 
 echo_port      = 8443                # Laravel Echo Server port
+ssh_port       = 22                  # SSH port UFW will allow (must match sshd_config)
 
 mail_driver    = "smtp"
 mail_host      = ""
@@ -194,12 +198,12 @@ The pipeline mirrors the classic installer flow, in this order:
 | # | Step | What happens |
 | --- | --- | --- |
 | 1 | **Policies** | Verifies root, supported Ubuntu release, no existing install, PHP version |
-| 2 | **Server** | Hostname, locale, timezone, swap, security hardening, SSH |
+| 2 | **Server** | Hostname, locale, timezone, swap, security hardening, SSH port configuration with lockout prevention |
 | 3 | **Redis** | Unix socket + group permissions, `maxmemory` cap, LRU policy, restart |
-| 4 | **Prerequisites** | PPA, apt packages, Node 24 LTS, Bun, `laravel-echo-server`, UFW rules |
+| 4 | **Prerequisites** | PPA, apt packages, Node 24 LTS, Bun, `laravel-echo-server`, UFW rules (SSH, Echo, Nginx) |
 | 5 | **Database** | Installs & secures MySQL/MariaDB/PostgreSQL, creates DB + user |
 | 6 | **PHP** | PHP-FPM, opcache/JIT tuning, `php.ini` hardening |
-| 7 | **Nginx** | Site config, security headers, `/socket.io` proxy, certbot SSL |
+| 7 | **Nginx** | Site config, security headers, `/socket.io` proxy, certbot SSL, UFW enable |
 | 8 | **UNIT3D** | Tag-pinned clone, `.env`, permissions, cron, Composer+Bun, Supervisor, Echo Server, migrations, caching |
 | 9 | **Meilisearch** | Systemd service, master key, `scout:sync-index-settings`, `scout:import` |
 | 10 | **Credentials** | Writes credentials file, prints final summary |
@@ -214,7 +218,15 @@ At the end of a successful run, the installer writes a credentials file to:
 
 It contains the admin login, database passwords, and the Meilisearch key.
 
-> **🔒 Security:** the file is only readable by `root`. **Save its contents somewhere safe and delete the file** — it cannot be recovered later.
+> **🔒 Security:** the file is only readable by `root` (`chmod 600`). **Save its contents somewhere safe and delete the file** — it cannot be recovered later.
+
+The credentials file includes:
+- **Owner login** (username, email, password)
+- **Database** (root password, database name, user, password)
+- **Meilisearch** (master key)
+- **Installation path** and PHP version
+- **Important file locations** (.env, Nginx, Supervisor, Echo Server)
+- **Useful commands** for service management
 
 ## Building From Source
 
@@ -281,6 +293,18 @@ The default is PHP 8.5 from the Ondrej PPA, matching the current UNIT3D requirem
 
 **How do I update UNIT3D afterwards?**
 Use the standard UNIT3D update procedure (`git pull` + `composer install` + migrations) in the install directory; the installer is only for fresh provisioning.
+
+**What is dry-run mode?**
+Run with `--dry-run` to preview every command and file the installer would create without making any changes to the system. Useful for auditing the installation plan.
+
+**Can I run the installer non-interactively?**
+Yes — use `--non-interactive` with a complete `--config` file. This is designed for CI/CD pipelines and automated deployments.
+
+**How does the SSH port configuration work?**
+The installer prompts for the SSH port (default 22) and shows a prominent warning with a 5-second countdown before confirmation. This prevents accidental lockout when UFW is enabled with a default-deny policy. The port must match your `sshd_config`.
+
+**Are credentials auto-generated?**
+Yes — if left blank in the config, the installer generates secure random values for: admin password, database password, database root password (MySQL/MariaDB), and Meilisearch master key.
 
 ## License
 
