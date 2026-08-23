@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-REPO="Diginette-Team/UNIT3D-Installer"
+REPO="InfinityHD-Net/UNIT3D-Installer"
 
 if [[ $EUID -ne 0 ]]; then
     echo "ERROR: Please run as root (sudo ./install.sh)" >&2
