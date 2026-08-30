@@ -444,7 +444,8 @@ impl Config {
                 self.app.dbuser
             )));
         }
-        if !is_safe_user(&self.app.owner) {
+        // owner is optional until filled by interactive prompts.
+        if !self.app.owner.is_empty() && !is_safe_user(&self.app.owner) {
             return Err(ConfigError::Invalid(format!(
                 "app.owner '{}' must be a username using only [A-Za-z0-9_-]",
                 self.app.owner

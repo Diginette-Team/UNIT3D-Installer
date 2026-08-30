@@ -134,7 +134,9 @@ fn user(ctx: &mut Context) -> Result<()> {
             owner
         };
         if !crate::config::is_safe_user(&candidate) {
-            ctx.style.warning("Invalid owner username: use only letters, numbers, underscores, and dashes.");
+            ctx.style.warning(
+                "Invalid owner username: use only letters, numbers, underscores, and dashes.",
+            );
             if ctx.non_interactive {
                 anyhow::bail!(
                     "non-interactive mode: invalid owner username '{}'. Use only [A-Za-z0-9_-]",
@@ -207,9 +209,15 @@ fn database(ctx: &mut Context) -> Result<()> {
     };
     loop {
         let db = ctx.prompter.text("UNIT3D DB Name", &db_default)?;
-        let candidate = if db.is_empty() { db_default.clone() } else { db };
+        let candidate = if db.is_empty() {
+            db_default.clone()
+        } else {
+            db
+        };
         if !crate::config::is_safe_token(&candidate) {
-            ctx.style.warning("Invalid database name: use only letters, numbers, dots, underscores, and dashes.");
+            ctx.style.warning(
+                "Invalid database name: use only letters, numbers, dots, underscores, and dashes.",
+            );
             if ctx.non_interactive {
                 anyhow::bail!(
                     "non-interactive mode: invalid database name '{}'. Use only [A-Za-z0-9_.-]",
@@ -229,9 +237,15 @@ fn database(ctx: &mut Context) -> Result<()> {
     };
     loop {
         let user = ctx.prompter.text("UNIT3D DB User", &user_default)?;
-        let candidate = if user.is_empty() { user_default.clone() } else { user };
+        let candidate = if user.is_empty() {
+            user_default.clone()
+        } else {
+            user
+        };
         if !crate::config::is_safe_token(&candidate) {
-            ctx.style.warning("Invalid database user: use only letters, numbers, dots, underscores, and dashes.");
+            ctx.style.warning(
+                "Invalid database user: use only letters, numbers, dots, underscores, and dashes.",
+            );
             if ctx.non_interactive {
                 anyhow::bail!(
                     "non-interactive mode: invalid database user '{}'. Use only [A-Za-z0-9_.-]",
@@ -295,16 +309,12 @@ fn mail(ctx: &mut Context) -> Result<()> {
         } else {
             port
         };
-        if !candidate.is_empty()
-            && candidate
-                .parse::<u16>()
-                .map(|p| p != 0)
-                .unwrap_or(false)
-        {
+        if !candidate.is_empty() && candidate.parse::<u16>().map(|p| p != 0).unwrap_or(false) {
             ctx.config.app.mail_port = candidate;
             break;
         }
-        ctx.style.warning("Mail port must be a numeric TCP port between 1 and 65535.");
+        ctx.style
+            .warning("Mail port must be a numeric TCP port between 1 and 65535.");
         if ctx.non_interactive {
             anyhow::bail!(
                 "non-interactive mode: invalid mail port '{}'. Use a numeric port 1-65535",
