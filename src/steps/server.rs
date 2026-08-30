@@ -32,6 +32,10 @@ impl Step for ServerSetupStep {
         api_keys(ctx)?;
         autoset_passwords(ctx);
 
+        if let Err(e) = ctx.config.validate() {
+            anyhow::bail!("invalid install configuration: {e}");
+        }
+
         print_summary(&ctx.config);
         if !ctx.prompter.confirm("Continue with installation?", true)? {
             anyhow::bail!("Installation cancelled by user");
@@ -122,7 +126,26 @@ fn user(ctx: &mut Context) -> Result<()> {
     } else {
         ctx.config.app.owner.clone()
     };
-    ctx.config.app.owner = ctx.prompter.text("Owner Username", &owner_default)?;
+    loop {
+        let owner = ctx.prompter.text("Owner Username", &owner_default)?;
+        let candidate = if owner.is_empty() {
+            owner_default.clone()
+        } else {
+            owner
+        };
+        if !crate::config::is_safe_user(&candidate) {
+            ctx.style.warning("Invalid owner username: use only letters, numbers, underscores, and dashes.");
+            if ctx.non_interactive {
+                anyhow::bail!(
+                    "non-interactive mode: invalid owner username '{}'. Use only [A-Za-z0-9_-]",
+                    candidate
+                );
+            }
+            continue;
+        }
+        ctx.config.app.owner = candidate;
+        break;
+    }
     let owner_pass_default = if ctx.config.app.password.is_empty() {
         password::str_random(20)
     } else {
@@ -182,16 +205,44 @@ fn database(ctx: &mut Context) -> Result<()> {
     } else {
         ctx.config.app.db.clone()
     };
-    let db = ctx.prompter.text("UNIT3D DB Name", &db_default)?;
-    ctx.config.app.db = if db.is_empty() { db_default } else { db };
+    loop {
+        let db = ctx.prompter.text("UNIT3D DB Name", &db_default)?;
+        let candidate = if db.is_empty() { db_default.clone() } else { db };
+        if !crate::config::is_safe_token(&candidate) {
+            ctx.style.warning("Invalid database name: use only letters, numbers, dots, underscores, and dashes.");
+            if ctx.non_interactive {
+                anyhow::bail!(
+                    "non-interactive mode: invalid database name '{}'. Use only [A-Za-z0-9_.-]",
+                    candidate
+                );
+            }
+            continue;
+        }
+        ctx.config.app.db = candidate;
+        break;
+    }
 
     let user_default = if ctx.config.app.dbuser.is_empty() {
         "unit3d".to_string()
     } else {
         ctx.config.app.dbuser.clone()
     };
-    let user = ctx.prompter.text("UNIT3D DB User", &user_default)?;
-    ctx.config.app.dbuser = if user.is_empty() { user_default } else { user };
+    loop {
+        let user = ctx.prompter.text("UNIT3D DB User", &user_default)?;
+        let candidate = if user.is_empty() { user_default.clone() } else { user };
+        if !crate::config::is_safe_token(&candidate) {
+            ctx.style.warning("Invalid database user: use only letters, numbers, dots, underscores, and dashes.");
+            if ctx.non_interactive {
+                anyhow::bail!(
+                    "non-interactive mode: invalid database user '{}'. Use only [A-Za-z0-9_.-]",
+                    candidate
+                );
+            }
+            continue;
+        }
+        ctx.config.app.dbuser = candidate;
+        break;
+    }
 
     let db_pass_default = if ctx.config.app.dbpass.is_empty() {
         password::str_random(20)
@@ -235,9 +286,32 @@ fn mail(ctx: &mut Context) -> Result<()> {
     ctx.config.app.mail_host = ctx
         .prompter
         .text("Mail Host", &ctx.config.app.mail_host.clone())?;
-    ctx.config.app.mail_port = ctx
-        .prompter
-        .text("Mail Port", &ctx.config.app.mail_port.clone())?;
+    loop {
+        let port = ctx
+            .prompter
+            .text("Mail Port", &ctx.config.app.mail_port.clone())?;
+        let candidate = if port.is_empty() {
+            ctx.config.app.mail_port.clone()
+        } else {
+            port
+        };
+        if !candidate.is_empty()
+            && candidate
+                .parse::<u16>()
+                .map(|p| p != 0)
+                .unwrap_or(false)
+        {
+            ctx.config.app.mail_port = candidate;
+            break;
+        }
+        ctx.style.warning("Mail port must be a numeric TCP port between 1 and 65535.");
+        if ctx.non_interactive {
+            anyhow::bail!(
+                "non-interactive mode: invalid mail port '{}'. Use a numeric port 1-65535",
+                candidate
+            );
+        }
+    }
     ctx.config.app.mail_username = ctx
         .prompter
         .text("Mail Username", &ctx.config.app.mail_username.clone())?;
@@ -501,6 +575,24 @@ mod tests {
         assert_eq!(ctx.config.app.dbuser, "unit3d");
         // Auto-generated DB password when left blank.
         assert!(!ctx.config.app.dbpass.is_empty());
+    }
+
+    #[test]
+    fn user_rejects_invalid_owner_name_in_non_interactive() {
+        let args = Args::parse_from(["unit3d-installer", "--non-interactive"]);
+        let mut ctx = Context::build(&args).unwrap();
+        ctx.config.app.owner = "bad user;rm -rf /".to_string();
+        let err = user(&mut ctx).unwrap_err();
+        assert!(err.to_string().contains("owner"));
+    }
+
+    #[test]
+    fn database_rejects_invalid_db_name_in_non_interactive() {
+        let args = Args::parse_from(["unit3d-installer", "--non-interactive"]);
+        let mut ctx = Context::build(&args).unwrap();
+        ctx.config.app.db = "unit3d;drop table users;".to_string();
+        let err = database(&mut ctx).unwrap_err();
+        assert!(err.to_string().contains("database name"));
     }
 
     #[test]

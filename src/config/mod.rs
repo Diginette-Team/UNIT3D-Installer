@@ -444,6 +444,12 @@ impl Config {
                 self.app.dbuser
             )));
         }
+        if !is_safe_user(&self.app.owner) {
+            return Err(ConfigError::Invalid(format!(
+                "app.owner '{}' must be a username using only [A-Za-z0-9_-]",
+                self.app.owner
+            )));
+        }
         // web_user flows into `sudo -u` and chown.
         if !is_safe_user(self.web_user()) {
             return Err(ConfigError::Invalid(format!(
@@ -536,7 +542,7 @@ fn is_valid_dns_label(label: &str) -> bool {
 }
 
 /// A DNS label / shell-safe token: only `[A-Za-z0-9_.-]`.
-fn is_safe_token(s: &str) -> bool {
+pub(crate) fn is_safe_token(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 64
         && s.chars()
@@ -544,7 +550,7 @@ fn is_safe_token(s: &str) -> bool {
 }
 
 /// A Unix username / group: `[A-Za-z0-9_-]`, no leading dash.
-fn is_safe_user(s: &str) -> bool {
+pub(crate) fn is_safe_user(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 32
         && !s.starts_with('-')
